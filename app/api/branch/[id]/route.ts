@@ -5,9 +5,9 @@ import { NextResponse } from 'next/server';
 // URL'deki {id} parametresi doğrudan şube ID'si (UUID) olarak kabul edilir.
 export async function GET(
   request: Request,
-  { params }: { params: any }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const branchId = params.id;
+  const { id: branchId } = await params;
 
   if (!branchId) {
     return NextResponse.json(
@@ -18,12 +18,57 @@ export async function GET(
 
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // Kimlik doğrulaması kontrolü
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   if (!user) {
     return NextResponse.json(
-      { error: 'Bu işlem için giriş yapmalısınız.' },
+      { error: 'Kimlik doğrulaması başarısız. Lütfen giriş yapın.' },
       { status: 401 }
+    );
+  }
+
+  // Yetkilendirme kontrolü
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, staff_branch_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile) {
+    return NextResponse.json(
+      { error: 'Kullanıcı profili bulunamadı.' },
+      { status: 403 }
+    );
+  }
+
+  if (profile.role === 'manager') {
+    const { data: assignment } = await supabase
+      .from('manager_branch_assignments')
+      .select('id')
+      .eq('manager_id', user.id)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    if (!assignment) {
+      return NextResponse.json(
+        { error: 'Bu şubenin verilerine erişim yetkiniz yok.' },
+        { status: 403 }
+      );
+    }
+  } else if (profile.role === 'branch_staff') {
+    if (profile.staff_branch_id !== branchId) {
+      return NextResponse.json(
+        { error: 'Sadece kendi şubenizin verilerine erişebilirsiniz.' },
+        { status: 403 }
+      );
+    }
+  } else if (profile.role !== 'admin') {
+    return NextResponse.json(
+      { error: 'Bu işlem için yetkiniz bulunmamaktadır.' },
+      { status: 403 }
     );
   }
 
@@ -46,9 +91,9 @@ export async function GET(
 // URL'deki {id} parametresi doğrudan şube ID'si (UUID) olarak kabul edilir.
 export async function POST(
   request: Request,
-  { params }: { params: any }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const branchId = params.id;
+  const { id: branchId } = await params;
 
   if (!branchId) {
     return NextResponse.json(
@@ -58,6 +103,60 @@ export async function POST(
   }
 
   const supabase = await createClient();
+
+  // Kimlik doğrulaması kontrolü
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Kimlik doğrulaması başarısız. Lütfen giriş yapın.' },
+      { status: 401 }
+    );
+  }
+
+  // Yetkilendirme kontrolü
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, staff_branch_id')
+    .eq('id', user.id)
+    .single();
+
+  if (!profile) {
+    return NextResponse.json(
+      { error: 'Kullanıcı profili bulunamadı.' },
+      { status: 403 }
+    );
+  }
+
+  if (profile.role === 'manager') {
+    const { data: assignment } = await supabase
+      .from('manager_branch_assignments')
+      .select('id')
+      .eq('manager_id', user.id)
+      .eq('branch_id', branchId)
+      .maybeSingle();
+
+    if (!assignment) {
+      return NextResponse.json(
+        { error: 'Bu şube için işlem yapma yetkiniz yok.' },
+        { status: 403 }
+      );
+    }
+  } else if (profile.role === 'branch_staff') {
+    if (profile.staff_branch_id !== branchId) {
+      return NextResponse.json(
+        { error: 'Sadece kendi şubeniz için işlem yapabilirsiniz.' },
+        { status: 403 }
+      );
+    }
+  } else if (profile.role !== 'admin') {
+    return NextResponse.json(
+      { error: 'Bu işlem için yetkiniz bulunmamaktadır.' },
+      { status: 403 }
+    );
+  }
 
   // Şube varlığını kontrol et
   const { data: branchExists, error: branchCheckError } = await supabase
