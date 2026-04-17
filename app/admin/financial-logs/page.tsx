@@ -53,30 +53,31 @@ export default function FinancialLogsPage() {
         return;
       }
 
-      // 2. Verileri zenginleştir
-      const enrichedLogs = await Promise.all(
-        logData.map(async (log) => {
-          const [branchResponse, userResponse] = await Promise.all([
-            supabase
-              .from('branches')
-              .select('name')
-              .eq('id', log.branch_id)
-              // .eq('archived', false)
-              .single(),
-            supabase
-              .from('profiles')
-              .select('email')
-              .eq('id', log.user_id)
-              .single(),
-          ]);
+      // 2. Verileri zenginleştir (N+1 sorgusunu çözmek için toplu sorgu)
+      const branchIds = [...new Set(logData.map((log) => log.branch_id).filter(Boolean))];
+      const userIds = [...new Set(logData.map((log) => log.user_id).filter(Boolean))];
 
-          return {
-            ...log,
-            branchName: branchResponse.data?.name || 'Bilinmiyor',
-            userEmail: userResponse.data?.email || 'Bilinmiyor',
-          };
-        })
+      const [branchesResponse, usersResponse] = await Promise.all([
+        branchIds.length > 0
+          ? supabase.from('branches').select('id, name').in('id', branchIds)
+          : Promise.resolve({ data: [] }),
+        userIds.length > 0
+          ? supabase.from('profiles').select('id, email').in('id', userIds)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const branchesMap = new Map(
+        (branchesResponse.data || []).map((b: any) => [b.id, b.name])
       );
+      const usersMap = new Map(
+        (usersResponse.data || []).map((u: any) => [u.id, u.email])
+      );
+
+      const enrichedLogs = logData.map((log) => ({
+        ...log,
+        branchName: branchesMap.get(log.branch_id) || 'Bilinmiyor',
+        userEmail: usersMap.get(log.user_id) || 'Bilinmiyor',
+      }));
 
       setLogs(enrichedLogs);
 
