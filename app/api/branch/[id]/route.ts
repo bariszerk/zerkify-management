@@ -1,4 +1,4 @@
-import { createClient } from '@/utils/supabase/client';
+import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 
 // GET: Belirli bir şubenin finansal özetlerini getirir.
@@ -16,7 +16,18 @@ export async function GET(
     );
   }
 
-  const { data, error } = await createClient()
+  const supabase = await createClient();
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json(
+      { error: 'Bu işlem için giriş yapmalısınız.' },
+      { status: 401 }
+    );
+  }
+
+  const { data, error } = await supabase
     .from('branch_financials')
     .select('*')
     .eq('branch_id', branchId);
@@ -46,7 +57,7 @@ export async function POST(
     );
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Şube varlığını kontrol et
   const { data: branchExists, error: branchCheckError } = await supabase
