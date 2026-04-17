@@ -103,30 +103,33 @@ export default function FinancialApprovalsPage() {
 
   useEffect(() => {
     const enrich = async () => {
-      const enriched = await Promise.all(
-        requests.map(async (r) => {
-          const [b, u] = await Promise.all([
-            supabase
-              .from('branches')
-              .select('name')
-              .eq('id', r.branch_id)
-              .eq('archived', false)
-              .single(),
-            supabase.from('profiles').select('email').eq('id', r.user_id).single(),
-          ]);
-          return {
-            ...r,
-            branch: b.data ? [{ name: b.data.name }] : null,
-            requester: u.data ? [{ email: u.data.email }] : null,
-          };
-        })
-      );
+      const branchIds = [...new Set(requests.map((r) => r.branch_id).filter(Boolean))];
+      const userIds = [...new Set(requests.map((r) => r.user_id).filter(Boolean))];
+
+      const [branchesRes, usersRes] = await Promise.all([
+        branchIds.length > 0
+          ? supabase.from('branches').select('id, name').in('id', branchIds).eq('archived', false)
+          : { data: [] },
+        userIds.length > 0
+          ? supabase.from('profiles').select('id, email').in('id', userIds)
+          : { data: [] },
+      ]);
+
+      const branchesMap = new Map((branchesRes.data || []).map((b) => [b.id, b]));
+      const usersMap = new Map((usersRes.data || []).map((u) => [u.id, u]));
+
+      const enriched = requests.map((r) => ({
+        ...r,
+        branch: r.branch_id && branchesMap.has(r.branch_id) ? [{ name: branchesMap.get(r.branch_id)?.name || '' }] : null,
+        requester: r.user_id && usersMap.has(r.user_id) ? [{ email: usersMap.get(r.user_id)?.email || '' }] : null,
+      }));
+
       setRequests(enriched);
     };
     if (requests.length && !requests[0].branch) {
       enrich();
     }
-  }, [requests]);
+  }, [requests, supabase]);
 
   const handleAction = async (req: ChangeRequest, approve: boolean) => {
     const status = approve ? 'approved' : 'rejected';

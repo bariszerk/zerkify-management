@@ -261,20 +261,26 @@ export async function GET(request: Request) {
 			start: dateRange.from,
 			end: dateRange.to,
 		});
+
+		// Pre-aggregate financials by date to avoid O(N*M) complexity
+		const financialsByDate = new Map<string, { earnings: number; expenses: number }>();
+		typedFinancials.forEach((item) => {
+			const current = financialsByDate.get(item.date) || { earnings: 0, expenses: 0 };
+			financialsByDate.set(item.date, {
+				earnings: current.earnings + item.earnings,
+				expenses: current.expenses + item.expenses,
+			});
+		});
+
 		intervalDays.forEach((day) => {
 			const dayStr = format(day, 'yyyy-MM-dd');
-			const dailyEarnings = typedFinancials
-				.filter((item) => item.date === dayStr)
-				.reduce((sum, item) => sum + item.earnings, 0);
-			const dailyExpenses = typedFinancials
-				.filter((item) => item.date === dayStr)
-				.reduce((sum, item) => sum + item.expenses, 0);
+			const dailyData = financialsByDate.get(dayStr) || { earnings: 0, expenses: 0 };
 
 			overviewData.push({
 				name: format(day, 'dd MMM', { locale: tr }),
 				originalDate: dayStr, // Tıklama için orijinal tarihi sakla
-				kazanc: dailyEarnings,
-				netKar: dailyEarnings - dailyExpenses,
+				kazanc: dailyData.earnings,
+				netKar: dailyData.earnings - dailyData.expenses,
 			});
 		});
 	}
