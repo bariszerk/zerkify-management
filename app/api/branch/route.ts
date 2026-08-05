@@ -36,6 +36,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ message: 'Şube adı gereklidir.' }, { status: 400 });
     }
 
+    if (address !== undefined && address !== null && typeof address !== 'string') {
+        return NextResponse.json({ message: 'Geçersiz adres formatı.' }, { status: 400 });
+    }
+
     // Aynı isimde başka bir şube olup olmadığını kontrol et
   const { data: existingBranch, error: checkError } = await supabase
         .from('branches')
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
         .from('branches')
         .insert([{
             name: name.trim(),
-            address: address ? address.trim() : null,
+            address: (address && typeof address === 'string') ? address.trim() : null,
         }])
         .select()
         .single();
